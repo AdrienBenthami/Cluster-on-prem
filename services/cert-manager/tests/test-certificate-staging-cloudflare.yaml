@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: test-cloudflare-staging
+  namespace: test
+spec:
+  secretName: test-cloudflare-staging-tls
+  issuerRef:
+    name: letsencrypt-staging-cloudflare
+    kind: ClusterIssuer
+  commonName: test-cf.benthami.eu
+  dnsNames:
+    - test-cf.benthami.eu

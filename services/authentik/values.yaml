@@ -1,0 +1,24 @@
+USER-SUPPLIED VALUES:
+authentik:
+  error_reporting:
+    enabled: true
+  existingSecret:
+    secretName: authentik
+postgresql:
+  auth:
+    existingSecret: authentik-postgresql
+  enabled: true
+server:
+  ingress:
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod-cloudflare
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+    enabled: true
+    hosts:
+    - auth.benthami.eu
+    ingressClassName: traefik
+    tls:
+    - hosts:
+      - auth.benthami.eu
+      secretName: authentik-tls

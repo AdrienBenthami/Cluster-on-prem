@@ -1,0 +1,31 @@
+USER-SUPPLIED VALUES:
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+logs:
+  general:
+    level: DEBUG
+ports:
+  web:
+    expose:
+      default: true
+    redirections:
+      entryPoint:
+        permanent: true
+        to: websecure
+  websecure:
+    expose:
+      default: true
+    http3:
+      enabled: false
+providers:
+  kubernetesCRD: {}
+  kubernetesIngress:
+    publishedService:
+      enabled: true
+service:
+  annotations:
+    metallb.universe.tf/allow-shared-ip: shared-lb
+  spec:
+    loadBalancerIP: 192.168.100.200
+  type: LoadBalancer

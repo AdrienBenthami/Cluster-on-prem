@@ -1,0 +1,11 @@
+cluster:
+  name: kubernetes
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4PodCIDRList:
+    - 10.244.0.0/16
+operator:
+  replicas: 1
+routingMode: tunnel
+tunnelProtocol: vxlan

@@ -1,0 +1,45 @@
+gitea:
+  config:
+    server:
+      DOMAIN: gitea.benthami.eu
+      ROOT_URL: https://gitea.benthami.eu
+  oauth:
+  - autoDiscoverUrl: https://auth.benthami.eu/application/o/gitea/.well-known/openid-configuration
+    existingSecret: gitea-oauth-secret
+    name: authentik
+    provider: openidConnect
+    scopes: openid profile email
+ingress:
+  annotations: {}
+  className: traefik
+  enabled: true
+  hosts:
+  - host: gitea.benthami.eu
+    paths:
+    - path: /
+      pathType: Prefix
+  tls:
+  - secretName: gitea-tls
+    hosts:
+    - gitea.benthami.eu
+postgresql:
+  enabled: true
+postgresql-ha:
+  enabled: false
+service:
+  http:
+    clusterIP: null
+    port: 3000
+    type: ClusterIP
+  ssh:
+    loadBalancerIP: 192.168.100.203
+    port: 22
+    type: LoadBalancer
+valkey:
+  enabled: true
+valkey-cluster:
+  enabled: false
+openshift:
+  enabled: false
+route:
+  enabled: false

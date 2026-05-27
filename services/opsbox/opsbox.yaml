@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opsbox
+  namespace: ops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opsbox-cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: opsbox
+    namespace: ops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opsbox-home
+  namespace: ops
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opsbox
+  namespace: ops
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: opsbox
+  template:
+    metadata:
+      labels:
+        app: opsbox
+    spec:
+      serviceAccountName: opsbox
+      containers:
+        - name: ubuntu-ssh
+          image: ubuntu:24.04
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              export DEBIAN_FRONTEND=noninteractive
+
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                openssh-server sudo curl wget ca-certificates gnupg \
+                git vim nano less procps iputils-ping net-tools \
+                bash-completion jq
+
+              KUBECTL_VER=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+              curl -fsSLo /usr/local/bin/kubectl \
+                "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/amd64/kubectl"
+              chmod +x /usr/local/bin/kubectl
+
+              curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+              K9S_VER=$(curl -fsSL https://api.github.com/repos/derailed/k9s/releases/latest \
+                | grep -oP '"tag_name":\s*"\K[^"]+')
+              curl -fsSL "https://github.com/derailed/k9s/releases/download/${K9S_VER}/k9s_Linux_amd64.tar.gz" \
+                | tar -xz -C /usr/local/bin k9s
+
+              STERN_VER=$(curl -fsSL https://api.github.com/repos/stern/stern/releases/latest \
+                | grep -oP '"tag_name":\s*"\K[^"]+')
+              STERN_VER_NO_V=${STERN_VER#v}
+              curl -fsSL "https://github.com/stern/stern/releases/download/${STERN_VER}/stern_${STERN_VER_NO_V}_linux_amd64.tar.gz" \
+                | tar -xz -C /usr/local/bin stern
+
+              mkdir -p /var/run/sshd
+
+              if ! id -u adrien >/dev/null 2>&1; then
+                useradd -m -s /bin/bash adrien
+              fi
+              usermod -aG sudo adrien
+              echo 'adrien ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/adrien
+              chmod 440 /etc/sudoers.d/adrien
+
+              mkdir -p /home/adrien/.ssh
+              cp /tmp/sshkey/authorized_key /home/adrien/.ssh/authorized_keys
+              chown -R adrien:adrien /home/adrien
+              chmod 750 /home/adrien
+              chmod 700 /home/adrien/.ssh
+              chmod 600 /home/adrien/.ssh/authorized_keys
+
+              sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+              sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+              sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+              sed -i 's|^#\?AuthorizedKeysFile.*|AuthorizedKeysFile .ssh/authorized_keys|' /etc/ssh/sshd_config
+
+              # Expose les variables d'env du pod aux shells SSH (sshd les efface sinon).
+              # Sans ça, kubectl tombe sur localhost:8080.
+              cat >/etc/profile.d/opsbox-env.sh <<EOF
+              export KUBERNETES_SERVICE_HOST="${KUBERNETES_SERVICE_HOST}"
+              export KUBERNETES_SERVICE_PORT="${KUBERNETES_SERVICE_PORT}"
+              EOF
+              chmod 644 /etc/profile.d/opsbox-env.sh
+
+              exec /usr/sbin/sshd -D -e
+          ports:
+            - name: ssh
+              containerPort: 22
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          volumeMounts:
+            - name: home
+              mountPath: /home/adrien
+            - name: ssh-key
+              mountPath: /tmp/sshkey
+              readOnly: true
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: opsbox-home
+        - name: ssh-key
+          secret:
+            secretName: opsbox-ssh-key
+            items:
+              - key: authorized_key
+                path: authorized_key
+                mode: 0600
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opsbox-ssh
+  namespace: ops
+spec:
+  type: LoadBalancer
+  loadBalancerIP: 192.168.100.201
+  selector:
+    app: opsbox
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
+      protocol: TCP
